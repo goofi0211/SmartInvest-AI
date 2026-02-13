@@ -1,10 +1,6 @@
-
 import { GoogleGenAI } from "@google/genai";
 import { MarketData, StockType, GroundingSource } from '../types';
 
-/**
- * Utility to parse JSON from the model's text response.
- */
 const parseGeminiJson = (text: string) => {
   try {
     const cleanText = text.replace(/```json\n?|\n?```/g, '').trim();
@@ -22,15 +18,13 @@ const parseGeminiJson = (text: string) => {
   }
 };
 
-/**
- * Fetches real-time market data using Gemini 3 and Google Search grounding.
- */
 export const fetchStockData = async (ticker: string): Promise<MarketData> => {
-  const apiKey = import.meta.env.VITE_API_KEY;
+  // 優先讀取 Vite 環境變數，若無則嘗試 process.env
+  const apiKey = import.meta.env.VITE_API_KEY || (process.env as any).API_KEY;
   const CACHE_KEY = `stock_cache_${ticker.toUpperCase()}`;
-  const CACHE_EXPIRY = 60 * 60 * 1000; // 1 小時快取時間
+  const CACHE_EXPIRY = 60 * 60 * 1000;
 
-  // --- 1. 檢查快取 ---
+  // 1. 檢查快取
   const cached = localStorage.getItem(CACHE_KEY);
   if (cached) {
     const parsedCache = JSON.parse(cached);
@@ -41,34 +35,37 @@ export const fetchStockData = async (ticker: string): Promise<MarketData> => {
   }
 
   if (!apiKey) {
-    console.error("Gemini API Key 遺失！");
+    console.error("Gemini API Key 遺失！請確認 GitHub Secrets 設定。");
     return createEmptyData(ticker, "Config Error");
   }
 
   try {
-    const ai = new GoogleGenAI({ apiKey: apiKey });
+    // 初始化 SDK
+    const genAI = new GoogleGenAI(apiKey);
+    
+    // 修正點：使用 getGenerativeModel 語法
+    const model = genAI.getGenerativeModel({ 
+      model: "gemini-1.5-flash", 
+      tools: [{ googleSearch: {} }] as any 
+    });
+
     const prompt = `
       Search for real-time market data for "${ticker}". 
       Also identify its "sector" (e.g. Technology, Healthcare) and "type" (choose one: ETF, Growth, Speculative, Dividend).
       Return ONLY a strict JSON object with price, changePercent, ath, rsi, ma200, peRatio, pegRatio, sector, type.
     `;
 
-    // 建議改用穩定的 gemini-1.5-flash
-    const response = await ai.models.generateContent({
-      model: 'gemini-1.5-flash', 
-      contents: prompt,
-      config: {
-        tools: [{ googleSearch: {} }],
-      },
-    });
-
-    const text = response.text || "";
+    // 修正點：正確的生成調用
+    const result = await model.generateContent(prompt);
+    const response = result.response;
+    const text = response.text();
     const data = parseGeminiJson(text);
     
+    // 提取來源資料
     const sources: GroundingSource[] = [];
-    const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks;
-    if (chunks) {
-      chunks.forEach((chunk: any) => {
+    const metadata = response.candidates?.[0]?.groundingMetadata;
+    if (metadata?.groundingChunks) {
+      metadata.groundingChunks.forEach((chunk: any) => {
         if (chunk.web && chunk.web.uri) {
           sources.push({
             title: chunk.web.title || "Source",
@@ -78,9 +75,9 @@ export const fetchStockData = async (ticker: string): Promise<MarketData> => {
       });
     }
 
-    if (!data) throw new Error("AI 回傳格式錯誤");
+    if (!data) throw new Error("AI 回傳格式無法解析");
 
-    const result: MarketData = {
+    const finalResult: MarketData = {
       ticker: ticker.toUpperCase(),
       price: data.price || 0,
       changePercent: data.changePercent || 0,
@@ -95,12 +92,12 @@ export const fetchStockData = async (ticker: string): Promise<MarketData> => {
       sources: sources.slice(0, 3),
     };
 
-    // --- 2. 存入快取 ---
-    localStorage.setItem(CACHE_KEY, JSON.stringify(result));
-    return result;
+    localStorage.setItem(CACHE_KEY, JSON.stringify(finalResult));
+    return finalResult;
 
   } catch (error: any) {
     console.error(`Error fetching ${ticker}:`, error);
+    // 處理 429 頻率限制錯誤
     return createEmptyData(ticker, error.status === 429 ? "Rate Limited" : "Sync Failed");
   }
 };
