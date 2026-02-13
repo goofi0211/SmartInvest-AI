@@ -27,14 +27,14 @@ const parseGeminiJson = (text: string) => {
  */
 export const fetchStockData = async (ticker: string): Promise<MarketData> => {
   // Always use process.env.API_KEY directly.
-  if (!process.env.API_KEY) {
+  if (!import.meta.env.VITE_API_KEY) {
     console.error("Gemini API Key is missing! Ensure process.env.API_KEY is defined.");
     return createEmptyData(ticker, "Config Error");
   }
 
   try {
     // Instantiate right before usage to ensure up-to-date configuration.
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_API_KEY });
     const prompt = `
       Search for real-time market data for "${ticker}". 
       Also identify its "sector" (e.g. Technology, Healthcare) and "type" (choose one: ETF, Growth, Speculative, Dividend).
