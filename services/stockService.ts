@@ -26,45 +26,45 @@ const parseGeminiJson = (text: string) => {
  * Fetches real-time market data using Gemini 3 and Google Search grounding.
  */
 export const fetchStockData = async (ticker: string): Promise<MarketData> => {
-  // Always use process.env.API_KEY directly.
-  if (!import.meta.env.VITE_API_KEY) {
-    console.error("Gemini API Key is missing! Ensure process.env.API_KEY is defined.");
+  const apiKey = import.meta.env.VITE_API_KEY;
+  const CACHE_KEY = `stock_cache_${ticker.toUpperCase()}`;
+  const CACHE_EXPIRY = 60 * 60 * 1000; // 1 小時快取時間
+
+  // --- 1. 檢查快取 ---
+  const cached = localStorage.getItem(CACHE_KEY);
+  if (cached) {
+    const parsedCache = JSON.parse(cached);
+    if (Date.now() - parsedCache.lastUpdated < CACHE_EXPIRY) {
+      console.log(`[Cache] 讀取快取資料: ${ticker}`);
+      return parsedCache;
+    }
+  }
+
+  if (!apiKey) {
+    console.error("Gemini API Key 遺失！");
     return createEmptyData(ticker, "Config Error");
   }
 
   try {
-    // Instantiate right before usage to ensure up-to-date configuration.
-    const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_API_KEY });
+    const ai = new GoogleGenAI({ apiKey: apiKey });
     const prompt = `
       Search for real-time market data for "${ticker}". 
       Also identify its "sector" (e.g. Technology, Healthcare) and "type" (choose one: ETF, Growth, Speculative, Dividend).
-      
-      Return ONLY a strict JSON object with these keys:
-      "price": number,
-      "changePercent": number,
-      "ath": number,
-      "rsi": number,
-      "ma200": number,
-      "peRatio": number,
-      "pegRatio": number,
-      "sector": string,
-      "type": string (must be one of: ETF, Growth, Speculative, Dividend)
+      Return ONLY a strict JSON object with price, changePercent, ath, rsi, ma200, peRatio, pegRatio, sector, type.
     `;
 
-    // Use gemini-3-flash-preview for general text and search tasks.
+    // 建議改用穩定的 gemini-1.5-flash
     const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
+      model: 'gemini-1.5-flash', 
       contents: prompt,
       config: {
         tools: [{ googleSearch: {} }],
       },
     });
 
-    // Extract text from response (property, not a method).
     const text = response.text || "";
     const data = parseGeminiJson(text);
     
-    // Extract website URLs from groundingChunks as required when using googleSearch.
     const sources: GroundingSource[] = [];
     const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks;
     if (chunks) {
@@ -78,9 +78,9 @@ export const fetchStockData = async (ticker: string): Promise<MarketData> => {
       });
     }
 
-    if (!data) throw new Error("Could not parse data from AI response");
+    if (!data) throw new Error("AI 回傳格式錯誤");
 
-    return {
+    const result: MarketData = {
       ticker: ticker.toUpperCase(),
       price: data.price || 0,
       changePercent: data.changePercent || 0,
@@ -94,9 +94,14 @@ export const fetchStockData = async (ticker: string): Promise<MarketData> => {
       lastUpdated: Date.now(),
       sources: sources.slice(0, 3),
     };
-  } catch (error) {
+
+    // --- 2. 存入快取 ---
+    localStorage.setItem(CACHE_KEY, JSON.stringify(result));
+    return result;
+
+  } catch (error: any) {
     console.error(`Error fetching ${ticker}:`, error);
-    return createEmptyData(ticker, "Sync Failed");
+    return createEmptyData(ticker, error.status === 429 ? "Rate Limited" : "Sync Failed");
   }
 };
 
