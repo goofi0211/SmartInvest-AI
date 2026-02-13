@@ -22,12 +22,12 @@ const parseGeminiJson = (text: string) => {
 };
 
 export const fetchStockData = async (ticker: string): Promise<MarketData> => {
-  // 修正點：統一從 import.meta.env 讀取，並確保 Vite config 有定義
+  // 從環境變數讀取 API Key
   const apiKey = import.meta.env.VITE_API_KEY;
   const CACHE_KEY = `stock_cache_${ticker.toUpperCase()}`;
   const CACHE_EXPIRY = 60 * 60 * 1000; // 1 小時快取
 
-  // 1. 檢查快取
+  // 1. 檢查快取邏輯
   const cached = localStorage.getItem(CACHE_KEY);
   if (cached) {
     const parsedCache = JSON.parse(cached);
@@ -38,35 +38,33 @@ export const fetchStockData = async (ticker: string): Promise<MarketData> => {
   }
 
   if (!apiKey) {
-    console.error("Gemini API Key 遺失！請檢查 GitHub Secrets。");
+    console.error("Gemini API Key 遺失！");
     return createEmptyData(ticker, "Config Error");
   }
 
   try {
-    // 修正點：正確實例化 GoogleGenAI 物件
+    // --- 關鍵修正點：確保實例化方式能讓 TS 正確辨識方法 ---
     const genAI = new GoogleGenAI(apiKey);
     
-    // 修正點：使用 getGenerativeModel 取得模型實例
+    // 取得模型實例
     const model = genAI.getGenerativeModel({ 
       model: "gemini-1.5-flash",
-      // Google Search Grounding 需要顯式宣告工具
       tools: [{ googleSearch: {} }] as any 
     });
 
     const prompt = `
       Search for real-time market data for "${ticker}". 
-      Also identify its "sector" (e.g. Technology, Healthcare) and "type" (choose one: ETF, Growth, Speculative, Dividend).
       Return ONLY a strict JSON object with price, changePercent, ath, rsi, ma200, peRatio, pegRatio, sector, type.
     `;
 
-    // 修正點：呼叫 generateContent
+    // 呼叫 API
     const result = await model.generateContent(prompt);
-    const response = result.response;
+    const response = await result.response;
     const text = response.text();
     
     const data = parseGeminiJson(text);
     
-    // 處理來源資料 (Grounding Sources)
+    // 處理來源資料
     const sources: GroundingSource[] = [];
     const metadata = response.candidates?.[0]?.groundingMetadata;
     if (metadata?.groundingChunks) {
@@ -103,7 +101,6 @@ export const fetchStockData = async (ticker: string): Promise<MarketData> => {
 
   } catch (error: any) {
     console.error(`Error fetching ${ticker}:`, error);
-    // 針對 429 錯誤回傳特定狀態
     return createEmptyData(ticker, error.status === 429 ? "Rate Limited" : "Sync Failed");
   }
 };
