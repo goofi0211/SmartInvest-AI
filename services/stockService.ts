@@ -1,6 +1,9 @@
 import { GoogleGenAI } from "@google/genai";
 import { MarketData, StockType, GroundingSource } from '../types';
 
+/**
+ * Utility to parse JSON from the model's text response.
+ */
 const parseGeminiJson = (text: string) => {
   try {
     const cleanText = text.replace(/```json\n?|\n?```/g, '').trim();
@@ -19,10 +22,10 @@ const parseGeminiJson = (text: string) => {
 };
 
 export const fetchStockData = async (ticker: string): Promise<MarketData> => {
-  // 優先讀取 Vite 環境變數，若無則嘗試 process.env
-  const apiKey = import.meta.env.VITE_API_KEY || (process.env as any).API_KEY;
+  // 修正點：統一從 import.meta.env 讀取，並確保 Vite config 有定義
+  const apiKey = import.meta.env.VITE_API_KEY;
   const CACHE_KEY = `stock_cache_${ticker.toUpperCase()}`;
-  const CACHE_EXPIRY = 60 * 60 * 1000;
+  const CACHE_EXPIRY = 60 * 60 * 1000; // 1 小時快取
 
   // 1. 檢查快取
   const cached = localStorage.getItem(CACHE_KEY);
@@ -35,17 +38,18 @@ export const fetchStockData = async (ticker: string): Promise<MarketData> => {
   }
 
   if (!apiKey) {
-    console.error("Gemini API Key 遺失！請確認 GitHub Secrets 設定。");
+    console.error("Gemini API Key 遺失！請檢查 GitHub Secrets。");
     return createEmptyData(ticker, "Config Error");
   }
 
   try {
-    // 初始化 SDK
+    // 修正點：正確實例化 GoogleGenAI 物件
     const genAI = new GoogleGenAI(apiKey);
     
-    // 修正點：使用 getGenerativeModel 語法
+    // 修正點：使用 getGenerativeModel 取得模型實例
     const model = genAI.getGenerativeModel({ 
-      model: "gemini-1.5-flash", 
+      model: "gemini-1.5-flash",
+      // Google Search Grounding 需要顯式宣告工具
       tools: [{ googleSearch: {} }] as any 
     });
 
@@ -55,13 +59,14 @@ export const fetchStockData = async (ticker: string): Promise<MarketData> => {
       Return ONLY a strict JSON object with price, changePercent, ath, rsi, ma200, peRatio, pegRatio, sector, type.
     `;
 
-    // 修正點：正確的生成調用
+    // 修正點：呼叫 generateContent
     const result = await model.generateContent(prompt);
     const response = result.response;
     const text = response.text();
+    
     const data = parseGeminiJson(text);
     
-    // 提取來源資料
+    // 處理來源資料 (Grounding Sources)
     const sources: GroundingSource[] = [];
     const metadata = response.candidates?.[0]?.groundingMetadata;
     if (metadata?.groundingChunks) {
@@ -92,12 +97,13 @@ export const fetchStockData = async (ticker: string): Promise<MarketData> => {
       sources: sources.slice(0, 3),
     };
 
+    // 存入快取
     localStorage.setItem(CACHE_KEY, JSON.stringify(finalResult));
     return finalResult;
 
   } catch (error: any) {
     console.error(`Error fetching ${ticker}:`, error);
-    // 處理 429 頻率限制錯誤
+    // 針對 429 錯誤回傳特定狀態
     return createEmptyData(ticker, error.status === 429 ? "Rate Limited" : "Sync Failed");
   }
 };
