@@ -1,4 +1,4 @@
-import { GoogleGenAI } from "@google/genai";
+import * as GenerativeAI from "@google/genai";
 import { MarketData, StockType, GroundingSource } from '../types';
 
 /**
@@ -44,7 +44,7 @@ export const fetchStockData = async (ticker: string): Promise<MarketData> => {
 
   try {
     // --- 關鍵修正點：確保實例化方式能讓 TS 正確辨識方法 ---
-    const genAI = new GoogleGenAI(apiKey);
+    const genAI = new GenerativeAI.GoogleGenAI(apiKey);
     
     // 取得模型實例
     const model = genAI.getGenerativeModel({ 
