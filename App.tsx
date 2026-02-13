@@ -17,7 +17,7 @@ const App: React.FC = () => {
   const [marketData, setMarketData] = useState<Record<string, MarketData>>({});
   const [isLoading, setIsLoading] = useState(false);
   const [syncProgress, setSyncProgress] = useState<{current: number, total: number} | null>(null);
-
+  const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
   useEffect(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) {
@@ -65,6 +65,7 @@ const App: React.FC = () => {
     for (let i = 0; i < tickersToFetch.length; i++) {
         const ticker = tickersToFetch[i];
         setSyncProgress({ current: i + 1, total: tickersToFetch.length });
+        if (i > 0) await sleep(30000);
         const data = await fetchStockData(ticker);
         newMarketData[ticker] = data;
         
