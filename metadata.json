@@ -1,0 +1,5 @@
+{
+  "name": "SmartInvest Dashboard",
+  "description": "A comprehensive single-page application for tracking investment portfolios, visualizing asset allocation, managing DCA strategies, and monitoring watchlists with real-time simulated market data.",
+  "requestFramePermissions": []
+}
