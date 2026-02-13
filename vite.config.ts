@@ -11,6 +11,11 @@ export default defineConfig(({ mode }) => {
       },
       plugins: [react()],
       base: '/SmartInvest-AI/',
+      build: {
+        outDir: 'dist',
+        sourcemap: false,
+        minify: 'terser',
+      },
       define: {
         'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY),
         'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY)
