@@ -25,6 +25,7 @@ const parseGeminiJson = (text: string) => {
 /**
  * Fetches real-time market data using Gemini 3 and Google Search grounding.
  */
+console.log("Current Key Start:", import.meta.env.VITE_API_KEY?.substring(0, 5));
 export const fetchStockData = async (ticker: string): Promise<MarketData> => {
   // Always use process.env.API_KEY directly.
   if (!import.meta.env.VITE_API_KEY) {
